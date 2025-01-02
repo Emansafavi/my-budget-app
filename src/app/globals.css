@@ -1,0 +1,53 @@
+/* globals.css */
+
+/* 1) Import Tailwind’s base, components, and utilities */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 2) Basic global resets or custom base styling */
+@layer base {
+  html, body {
+    /* A subtle, modern default font and background color */
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+      Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji",
+      "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    color: rgb(55, 48, 31); /* Tailwind’s text-gray-800 */
+    background-color: rgb(249, 250, 251); /* Tailwind’s gray-50 */
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Optionally override some default elements’ styles: */
+  a {
+    color: #2563eb; /* Tailwind’s blue-600 */
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+}
+
+/* 3) Example: custom classes or overrides using @layer components */
+@layer components {
+  /* Example custom button style (only if you want a custom style):
+   * This is purely an example to show how to add a custom .my-button class 
+   * using Tailwind’s @apply syntax. 
+   */
+  .my-button {
+    @apply px-4 py-2 font-semibold rounded-md text-white bg-blue-600 hover:bg-blue-700;
+  }
+}
+
+/* 4) Example: custom utilities using @layer utilities */
+@layer utilities {
+  /* If you want custom utility classes, define them here.
+   * e.g., .content-auto { content-visibility: auto; }
+   */
+  .content-auto {
+    content-visibility: auto;
+  }
+}
+
