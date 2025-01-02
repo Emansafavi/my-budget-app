@@ -14,17 +14,14 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Upload,
   FileDown,
-  TrendingUp,
-  TrendingDown,
   CheckCircle,
   AlertTriangle,
+  Plus,
 } from "lucide-react";
 
-// Install react-datepicker for a better-looking calendar
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 
-// Recharts for charts
 import {
   BarChart,
   Bar,
@@ -48,60 +45,136 @@ function exportToCsv(filename, rows) {
 }
 
 export default function Page() {
+  // -----------------------------
+  // States
+  // -----------------------------
   const [incomes, setIncomes] = useState([{ name: "", amount: 0 }]);
   const [fixedExpenses, setFixedExpenses] = useState([{ name: "", amount: 0 }]);
-  const [variablePredictions, setVariablePredictions] = useState([
-    { name: "", amount: 0 },
+  const [variableExpenses, setVariableExpenses] = useState([
+    { name: "Groceries", predicted: 100, spent: 0 },
   ]);
 
+  // Basic setup
   const [leftoverLastMonth, setLeftoverLastMonth] = useState(0);
   const [threshold, setThreshold] = useState(0);
-  const [todayDate, setTodayDate] = useState(new Date());
-  const [payDay, setPayDay] = useState(new Date());
 
+  // Dates
+  const [todayDate, setTodayDate] = useState(new Date());
+  const [payDay, setPayDay] = useState(new Date()); // user-chosen pay day
+
+  // -----------------------------
+  // Budget Logic
+  // -----------------------------
   const totalIncome = incomes.reduce((sum, i) => sum + i.amount, 0);
   const totalFixed = fixedExpenses.reduce((sum, f) => sum + f.amount, 0);
-  const totalVariable = variablePredictions.reduce((sum, v) => sum + v.amount, 0);
 
-  const monthlyVariableBudget = totalIncome - totalFixed - totalVariable;
-  const grandTotalLeftover = leftoverLastMonth + monthlyVariableBudget;
+  // Variable
+  const totalPredicted = variableExpenses.reduce(
+    (sum, v) => sum + v.predicted,
+    0
+  );
+  const totalSpent = variableExpenses.reduce((sum, v) => sum + v.spent, 0);
 
-  const dayOfMonth = todayDate.getDate();
-  const month = todayDate.getMonth();
-  const year = todayDate.getFullYear();
-  const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
-  const daysRemaining = totalDaysInMonth - dayOfMonth;
+  // Predicted leftover
+  const predictedLeftover =
+    leftoverLastMonth + totalIncome - totalFixed - totalPredicted;
+
+  // Actual leftover
+  const actualLeftover =
+    leftoverLastMonth + totalIncome - totalFixed - totalSpent;
+
+  // Days until pay day (if user sets payDay >= today; else just treat it as 0)
+  const msInDay = 1000 * 60 * 60 * 24;
+  const daysUntilPayDay = Math.max(
+    Math.ceil((payDay.getTime() - todayDate.getTime()) / msInDay),
+    0
+  );
+
+  // Daily leftover (based on actual leftover)
   const dailyLeftover =
-    daysRemaining > 0 ? (monthlyVariableBudget / daysRemaining).toFixed(2) : "—";
+    daysUntilPayDay > 0 ? (actualLeftover / daysUntilPayDay).toFixed(2) : "—";
 
-  const isBelowThreshold = grandTotalLeftover < threshold;
+  // Check threshold
+  const isBelowThreshold = actualLeftover < threshold;
 
+  // Distribution (for a progress bar in the Dashboard)
   const fixedPercent = totalIncome ? (totalFixed / totalIncome) * 100 : 0;
-  const variablePercent = totalIncome ? (totalVariable / totalIncome) * 100 : 0;
+  const variablePercent = totalIncome
+    ? (totalPredicted / totalIncome) * 100
+    : 0;
 
-  const barData = variablePredictions.map((item) => ({
+  // -----------------------------
+  // Chart Data
+  // -----------------------------
+  const barData = variableExpenses.map((item) => ({
     name: item.name,
-    amount: item.amount,
+    predicted: item.predicted,
+    spent: item.spent,
   }));
 
+  // -----------------------------
+  // CSV Import/Export Handlers
+  // -----------------------------
   const handleExportCsv = () => {
+    // Example CSV structure
     const rows = [
       ["Section", "Name", "Amount"],
       ...incomes.map((i) => ["Income", i.name, i.amount]),
       ...fixedExpenses.map((f) => ["Fixed", f.name, f.amount]),
-      ...variablePredictions.map((v) => ["Variable", v.name, v.amount]),
+      ...variableExpenses.map((v) => [
+        "Variable",
+        v.name,
+        `Predicted: ${v.predicted}, Spent: ${v.spent}`,
+      ]),
       ["", "Leftover Last Month", leftoverLastMonth],
       ["", "Total Income", totalIncome],
       ["", "Total Fixed", totalFixed],
-      ["", "Total Variable", totalVariable],
-      ["", "Monthly Variable Budget", monthlyVariableBudget],
-      ["", "Grand Total Leftover", grandTotalLeftover],
+      ["", "Total Predicted", totalPredicted],
+      ["", "Predicted Leftover", predictedLeftover],
+      ["", "Total Spent", totalSpent],
+      ["", "Actual Leftover", actualLeftover],
       ["", "Threshold", threshold],
     ];
     exportToCsv("my_budget.csv", rows);
   };
 
-  // Handlers for Incomes
+  const handleImportCsv = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      const lines = text.split("\n");
+
+      let newIncomes = [];
+      let newFixed = [];
+      // let newVariable = []; // If you want to parse variable lines from CSV
+
+      lines.forEach((line) => {
+        const cols = line.split(",");
+        const section = cols[0]?.trim();
+        const name = cols[1]?.trim();
+        const amountStr = cols[2]?.trim();
+
+        if (section === "Income") {
+          const amount = parseFloat(amountStr) || 0;
+          newIncomes.push({ name, amount });
+        } else if (section === "Fixed") {
+          const amount = parseFloat(amountStr) || 0;
+          newFixed.push({ name, amount });
+        }
+        // else if (section === "Variable") { parse out predicted/spent if wanted }
+      });
+
+      setIncomes(newIncomes);
+      setFixedExpenses(newFixed);
+    };
+    reader.readAsText(file);
+  };
+
+  // -----------------------------
+  // Income Handlers
+  // -----------------------------
   const addIncomeLine = () => {
     setIncomes([...incomes, { name: "", amount: 0 }]);
   };
@@ -112,12 +185,13 @@ export default function Page() {
   };
   const updateIncomeLine = (idx, field, value) => {
     const arr = [...incomes];
-    arr[idx][field] =
-      field === "amount" ? parseFloat(value) || 0 : value;
+    arr[idx][field] = field === "amount" ? parseFloat(value) || 0 : value;
     setIncomes(arr);
   };
 
-  // Handlers for Fixed Expenses
+  // -----------------------------
+  // Fixed Handlers
+  // -----------------------------
   const addFixedLine = () => {
     setFixedExpenses([...fixedExpenses, { name: "", amount: 0 }]);
   };
@@ -128,83 +202,64 @@ export default function Page() {
   };
   const updateFixedLine = (idx, field, value) => {
     const arr = [...fixedExpenses];
-    arr[idx][field] =
-      field === "amount" ? parseFloat(value) || 0 : value;
+    arr[idx][field] = field === "amount" ? parseFloat(value) || 0 : value;
     setFixedExpenses(arr);
   };
 
-  // Handlers for Variable Predictions
+  // -----------------------------
+  // Variable Handlers
+  // -----------------------------
   const addVariableLine = () => {
-    setVariablePredictions([...variablePredictions, { name: "", amount: 0 }]);
+    setVariableExpenses([
+      ...variableExpenses,
+      { name: "", predicted: 0, spent: 0 },
+    ]);
   };
   const removeVariableLine = (idx) => {
-    const arr = [...variablePredictions];
+    const arr = [...variableExpenses];
     arr.splice(idx, 1);
-    setVariablePredictions(arr);
+    setVariableExpenses(arr);
   };
   const updateVariableLine = (idx, field, value) => {
-    const arr = [...variablePredictions];
-    arr[idx][field] =
-      field === "amount" ? parseFloat(value) || 0 : value;
-    setVariablePredictions(arr);
+    const arr = [...variableExpenses];
+    arr[idx][field] = parseFloat(value) || 0;
+    setVariableExpenses(arr);
+  };
+  const updateVariableName = (idx, value) => {
+    const arr = [...variableExpenses];
+    arr[idx].name = value;
+    setVariableExpenses(arr);
   };
 
-  // CSV Import Handler
-  const handleImportCsv = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target.result;
-      const lines = text.split("\n");
-
-      let newIncomes = [];
-      let newFixed = [];
-      let newVariable = [];
-
-      lines.forEach((line) => {
-        const cols = line.split(",");
-        const section = cols[0]?.trim();
-        const name = cols[1]?.trim();
-        const amountStr = cols[2]?.trim();
-        const amount = parseFloat(amountStr) || 0;
-
-        if (section === "Income") {
-          newIncomes.push({ name, amount });
-        } else if (section === "Fixed") {
-          newFixed.push({ name, amount });
-        } else if (section === "Variable") {
-          newVariable.push({ name, amount });
-        }
-      });
-
-      setIncomes(newIncomes);
-      setFixedExpenses(newFixed);
-      setVariablePredictions(newVariable);
-    };
-
-    reader.readAsText(file);
+  // **New**: Quick “Add Spent” function
+  const handleAddSpent = (idx, addValue) => {
+    const arr = [...variableExpenses];
+    arr[idx].spent += parseFloat(addValue) || 0;
+    setVariableExpenses(arr);
   };
 
+  // -----------------------------
+  // UI / Layout
+  // -----------------------------
   return (
-    <main className="container mx-auto py-8 px-4 space-y-6 bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 min-h-screen">
-      <h1 className="text-4xl font-extrabold text-center text-white mb-6">
-        Budget Dashboard
+    <main className="flex flex-col items-center justify-start min-h-screen bg-white py-6 px-4 space-y-6">
+      <h1 className="text-3xl md:text-4xl font-extrabold text-gray-900">
+        My Budget App
       </h1>
 
-      {/* Top Row: Budget Setup & Dashboard */}
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Budget Setup */}
-        <Card className="bg-gradient-to-r from-purple-700 to-purple-900 text-white shadow-lg rounded-lg">
-          <CardHeader>
-            <CardTitle className="text-2xl">Budget Setup</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Leftover Last Month */}
+      {/* Budget Setup */}
+      <Card className="w-full max-w-3xl shadow-md rounded-xl">
+        <CardHeader>
+          <CardTitle className="text-lg font-semibold text-gray-900">
+            Budget Setup
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Leftover + Threshold */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-2">
-                Leftover from Last Month
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Leftover (Last Month)
               </label>
               <Input
                 type="number"
@@ -212,60 +267,56 @@ export default function Page() {
                 onChange={(e) =>
                   setLeftoverLastMonth(parseFloat(e.target.value) || 0)
                 }
-                className="bg-gray-800 text-white"
+                className="shadow-inner"
                 placeholder="€0.00"
               />
             </div>
-
-            {/* Safety Threshold */}
             <div>
-              <label className="block text-sm font-medium mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 Safety Threshold
               </label>
               <Input
                 type="number"
                 value={threshold}
-                onChange={(e) =>
-                  setThreshold(parseFloat(e.target.value) || 0)
-                }
-                className="bg-gray-800 text-white"
+                onChange={(e) => setThreshold(parseFloat(e.target.value) || 0)}
+                className="shadow-inner"
                 placeholder="€0.00"
               />
             </div>
+          </div>
 
-            {/* Calendars */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm font-medium text-gray-200 mb-2">
-                  Today’s Date
-                </p>
-                <DatePicker
-                  selected={todayDate}
-                  onChange={(date) => setTodayDate(date)}
-                  className="w-full p-2 bg-gray-800 text-white rounded-md"
-                />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-200 mb-2">
-                  Pay Day
-                </p>
-                <DatePicker
-                  selected={payDay}
-                  onChange={(date) => setPayDay(date)}
-                  className="w-full p-2 bg-gray-800 text-white rounded-md"
-                />
-              </div>
-            </div>
-
-            {/* CSV Import */}
+          {/* Dates */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <p className="text-sm text-gray-300 mb-2">
-                Import a previously exported CSV:
-              </p>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Today’s Date
+              </label>
+              <DatePicker
+                selected={todayDate}
+                onChange={(date) => setTodayDate(date)}
+                className="w-full p-2 shadow-inner rounded-md"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Pay Day
+              </label>
+              <DatePicker
+                selected={payDay}
+                onChange={(date) => setPayDay(date)}
+                className="w-full p-2 shadow-inner rounded-md"
+              />
+            </div>
+          </div>
+
+          {/* CSV Import/Export */}
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="flex-1">
+              <p className="text-sm text-gray-500 mb-1">Import CSV:</p>
               <Button
                 variant="secondary"
                 onClick={() => document.getElementById("import-csv").click()}
-                className="flex items-center justify-center w-full bg-purple-600 hover:bg-purple-700"
+                className="flex items-center justify-center w-full bg-gray-100 hover:bg-gray-200 text-gray-700"
               >
                 <Upload className="w-4 h-4 mr-2" />
                 Import CSV
@@ -278,176 +329,248 @@ export default function Page() {
                 onChange={handleImportCsv}
               />
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Dashboard */}
-        <Card className="bg-gradient-to-r from-green-700 to-green-900 text-white shadow-lg rounded-lg">
-          <CardHeader>
-            <CardTitle className="text-2xl">Dashboard</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Grand Total Leftover */}
-            <div className="text-center space-y-2">
-              <h2 className="text-5xl font-bold animate-pulse">
-                €{grandTotalLeftover.toFixed(2)}
-              </h2>
-              <p className="text-sm flex items-center justify-center">
-                {grandTotalLeftover >= 0 ? (
-                  <>
-                    <CheckCircle className="w-5 h-5 mr-1 text-green-400" />
-                    Above Threshold
-                  </>
-                ) : (
-                  <>
-                    <AlertTriangle className="w-5 h-5 mr-1 text-red-400" />
-                    Below Threshold
-                  </>
-                )}
-              </p>
+            <div className="flex-1">
+              <p className="text-sm text-gray-500 mb-1">Export CSV:</p>
+              <Button
+                onClick={handleExportCsv}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center"
+              >
+                <FileDown className="w-4 h-4 mr-2" />
+                Export CSV
+              </Button>
             </div>
+          </div>
+        </CardContent>
+      </Card>
 
-            {/* Monthly Var Budget & Daily Leftover */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Monthly Var Budget */}
-              <div className="text-center">
-                <h3 className="text-xl font-semibold">Monthly Var Budget</h3>
-                <p
-                  className={`text-3xl font-bold ${
-                    monthlyVariableBudget >= 0
-                      ? "text-green-400"
-                      : "text-red-400"
-                  }`}
-                >
-                  €{monthlyVariableBudget.toFixed(2)}
-                </p>
-              </div>
-
-              {/* Daily Leftover */}
-              <div className="text-center">
-                <h3 className="text-xl font-semibold">Daily Leftover</h3>
-                <p
-                  className={`text-3xl font-bold ${
-                    dailyLeftover >= 0 ? "text-green-400" : "text-red-400"
-                  }`}
-                >
-                  €{dailyLeftover}/day
-                </p>
-              </div>
-            </div>
-
-            {/* Progress Bars */}
-            <div className="space-y-4">
-              <div>
-                <p className="text-sm font-medium text-gray-200 mb-1">
-                  Income Distribution
-                </p>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm">Fixed ({fixedPercent.toFixed(1)}%)</span>
-                  <Progress
-                    value={fixedPercent}
-                    className="flex-1 bg-gray-700"
-                  />
-                </div>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="text-sm">Variable ({variablePercent.toFixed(1)}%)</span>
-                  <Progress
-                    value={variablePercent}
-                    className="flex-1 bg-gray-700"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Additional Info */}
-            <div className="space-y-2">
-              <p>
-                <strong>Last Month Leftover:</strong> €{leftoverLastMonth.toFixed(2)}
-              </p>
-              <p>
-                <strong>Day of Month:</strong> {dayOfMonth} / {totalDaysInMonth}
-              </p>
-              <p>
-                <strong>Days Remaining in Month:</strong> {daysRemaining}
-              </p>
-            </div>
-
-            {/* Threshold Warning */}
-            {isBelowThreshold ? (
-              <p className="text-red-500 flex items-center">
-                <AlertTriangle className="w-5 h-5 mr-1" />
-                Warning: Below your threshold of €{threshold.toFixed(2)}!
-              </p>
-            ) : (
-              <p className="text-green-500 flex items-center">
-                <CheckCircle className="w-5 h-5 mr-1" />
-                Above threshold (€{threshold.toFixed(2)}) — safe.
-              </p>
-            )}
-
-            {/* Export CSV Button */}
-            <Button
-              onClick={handleExportCsv}
-              className="w-full bg-green-600 hover:bg-green-700 flex items-center justify-center"
-            >
-              <FileDown className="w-4 h-4 mr-2" />
-              Export CSV
-            </Button>
-          </CardContent>
-        </Card>
-      </section>
-
-      {/* Bottom Tabs: Incomes | Fixed | Variable | Charts */}
-      <Tabs defaultValue="incomes" className="bg-gray-800 rounded-lg shadow-lg">
-        <TabsList className="flex justify-around bg-gray-800 border-b border-gray-700">
-          <TabsTrigger value="incomes" className="text-white">
-            Incomes
-          </TabsTrigger>
-          <TabsTrigger value="fixed" className="text-white">
-            Fixed
-          </TabsTrigger>
-          <TabsTrigger value="variable" className="text-white">
+      {/* Tabs:
+          1) Variable
+          2) Fixed
+          3) Incomes
+          4) Dashboard
+       */}
+      <Tabs
+        defaultValue="variable"
+        className="w-full max-w-6xl shadow-md rounded-xl"
+      >
+        <TabsList className="flex justify-around border-b border-gray-200 bg-white rounded-t-xl">
+          <TabsTrigger value="variable" className="text-gray-700">
             Variable
           </TabsTrigger>
-          <TabsTrigger value="charts" className="text-white">
-            Charts
+          <TabsTrigger value="fixed" className="text-gray-700">
+            Fixed
+          </TabsTrigger>
+          <TabsTrigger value="incomes" className="text-gray-700">
+            Incomes
+          </TabsTrigger>
+          <TabsTrigger value="dashboard" className="text-gray-700">
+            Dashboard
           </TabsTrigger>
         </TabsList>
 
-        {/* Tab Content: Incomes */}
+        {/* =================== */}
+        {/*  Variable Expenses */}
+        {/* =================== */}
         <TabsContent
-          value="incomes"
-          className="p-4 bg-gray-700 text-white rounded-b-lg"
+          value="variable"
+          className="p-4 bg-white text-gray-800 rounded-b-xl"
         >
-          <Card className="bg-gray-700 text-white shadow-none">
+          <Card className="shadow-none bg-white">
             <CardHeader>
-              <CardTitle className="text-xl">Incomes</CardTitle>
+              <CardTitle className="text-lg font-semibold text-gray-800">
+                Variable Expenses
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {variableExpenses.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="p-3 rounded-lg shadow-sm border flex flex-col gap-3 sm:flex-row sm:items-center"
+                >
+                  <div className="flex-1 space-y-1">
+                    <Input
+                      placeholder="e.g. Groceries"
+                      value={item.name}
+                      onChange={(e) => updateVariableName(idx, e.target.value)}
+                      className="shadow-inner"
+                    />
+                    <div className="flex gap-2">
+                      <Input
+                        type="number"
+                        inputMode="numeric"
+                        placeholder="Predicted"
+                        value={item.predicted}
+                        onChange={(e) =>
+                          updateVariableLine(idx, "predicted", e.target.value)
+                        }
+                        className="shadow-inner w-1/2"
+                      />
+                      <Input
+                        type="number"
+                        inputMode="numeric"
+                        placeholder="Spent"
+                        value={item.spent}
+                        onChange={(e) =>
+                          updateVariableLine(idx, "spent", e.target.value)
+                        }
+                        className="shadow-inner w-1/2"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Quick "Add Spent" Button + input */}
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      placeholder="+€"
+                      onKeyDown={(e) => {
+                        // Pressing Enter => confirm
+                        if (e.key === "Enter") {
+                          handleAddSpent(idx, e.currentTarget.value);
+                          e.currentTarget.value = "";
+                        }
+                      }}
+                      className="shadow-inner w-20"
+                    />
+                    <Button
+                      onClick={() => {
+                        const inputElem = document.getElementById(
+                          `addSpentInput-${idx}`
+                        );
+                        // If you store refs or IDs, we could read the value directly
+                        // For simplicity, let's do the "onKeyDown" approach above
+                      }}
+                      className="flex items-center gap-1 bg-green-100 text-green-700 hover:bg-green-200"
+                      title="Add spent amount"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
+
+                  {/* Remove line */}
+                  {idx > 0 && (
+                    <Button
+                      variant="destructive"
+                      onClick={() => removeVariableLine(idx)}
+                      className="mt-2 sm:mt-0 bg-red-100 text-red-600 hover:bg-red-200"
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              ))}
+
+              <Button
+                onClick={addVariableLine}
+                variant="secondary"
+                className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center justify-center"
+              >
+                + Add Variable
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* =============== */}
+        {/*  Fixed Expenses */}
+        {/* =============== */}
+        <TabsContent
+          value="fixed"
+          className="p-4 bg-white text-gray-800 rounded-b-xl"
+        >
+          <Card className="shadow-none bg-white">
+            <CardHeader>
+              <CardTitle className="text-lg font-semibold text-gray-800">
+                Fixed Expenses
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {incomes.map((item, index) => (
+              {fixedExpenses.map((item, idx) => (
                 <div
-                  key={index}
+                  key={idx}
                   className="flex flex-col sm:flex-row items-start sm:items-center gap-3"
                 >
                   <Input
                     placeholder="Name"
                     value={item.name}
-                    onChange={(e) => updateIncomeLine(index, "name", e.target.value)}
-                    className="bg-gray-600 text-white"
+                    onChange={(e) =>
+                      updateFixedLine(idx, "name", e.target.value)
+                    }
+                    className="shadow-inner"
                   />
                   <Input
                     type="number"
                     inputMode="numeric"
                     placeholder="Amount"
                     value={item.amount}
-                    onChange={(e) => updateIncomeLine(index, "amount", e.target.value)}
-                    className="bg-gray-600 text-white w-full sm:w-32"
+                    onChange={(e) =>
+                      updateFixedLine(idx, "amount", e.target.value)
+                    }
+                    className="shadow-inner w-full sm:w-32"
                   />
-                  {index > 0 && (
+                  {idx > 0 && (
                     <Button
                       variant="destructive"
-                      onClick={() => removeIncomeLine(index)}
-                      className="mt-2 sm:mt-0"
+                      onClick={() => removeFixedLine(idx)}
+                      className="mt-2 sm:mt-0 bg-red-100 text-red-600 hover:bg-red-200"
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              ))}
+
+              <Button
+                onClick={addFixedLine}
+                variant="secondary"
+                className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center justify-center"
+              >
+                + Add Fixed
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* =========== */}
+        {/*  Incomes    */}
+        {/* =========== */}
+        <TabsContent
+          value="incomes"
+          className="p-4 bg-white text-gray-800 rounded-b-xl"
+        >
+          <Card className="shadow-none bg-white">
+            <CardHeader>
+              <CardTitle className="text-lg font-semibold text-gray-800">
+                Incomes
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {incomes.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="flex flex-col sm:flex-row items-start sm:items-center gap-3"
+                >
+                  <Input
+                    placeholder="Name"
+                    value={item.name}
+                    onChange={(e) => updateIncomeLine(idx, "name", e.target.value)}
+                    className="shadow-inner"
+                  />
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    placeholder="Amount"
+                    value={item.amount}
+                    onChange={(e) =>
+                      updateIncomeLine(idx, "amount", e.target.value)
+                    }
+                    className="shadow-inner w-full sm:w-32"
+                  />
+                  {idx > 0 && (
+                    <Button
+                      variant="destructive"
+                      onClick={() => removeIncomeLine(idx)}
+                      className="mt-2 sm:mt-0 bg-red-100 text-red-600 hover:bg-red-200"
                     >
                       Remove
                     </Button>
@@ -457,7 +580,7 @@ export default function Page() {
               <Button
                 onClick={addIncomeLine}
                 variant="secondary"
-                className="w-full bg-purple-600 hover:bg-purple-700 flex items-center justify-center"
+                className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center justify-center"
               >
                 + Add Income
               </Button>
@@ -465,140 +588,156 @@ export default function Page() {
           </Card>
         </TabsContent>
 
-        {/* Tab Content: Fixed */}
+        {/* ================ */}
+        {/*  Dashboard/Chart */}
+        {/* ================ */}
         <TabsContent
-          value="fixed"
-          className="p-4 bg-gray-700 text-white rounded-b-lg"
+          value="dashboard"
+          className="p-4 bg-white text-gray-800 rounded-b-xl"
         >
-          <Card className="bg-gray-700 text-white shadow-none">
+          <Card className="shadow-none bg-white">
             <CardHeader>
-              <CardTitle className="text-xl">Fixed Expenses</CardTitle>
+              <CardTitle className="text-lg font-semibold text-gray-800">
+                Dashboard
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {fixedExpenses.map((item, index) => (
-                <div
-                  key={index}
-                  className="flex flex-col sm:flex-row items-start sm:items-center gap-3"
-                >
-                  <Input
-                    placeholder="Name"
-                    value={item.name}
-                    onChange={(e) => updateFixedLine(index, "name", e.target.value)}
-                    className="bg-gray-600 text-white"
-                  />
-                  <Input
-                    type="number"
-                    inputMode="numeric"
-                    placeholder="Amount"
-                    value={item.amount}
-                    onChange={(e) => updateFixedLine(index, "amount", e.target.value)}
-                    className="bg-gray-600 text-white w-full sm:w-32"
-                  />
-                  {index > 0 && (
-                    <Button
-                      variant="destructive"
-                      onClick={() => removeFixedLine(index)}
-                      className="mt-2 sm:mt-0"
-                    >
-                      Remove
-                    </Button>
+            <CardContent className="space-y-6">
+              {/* Leftover Summaries */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                {/* Predicted Leftover */}
+                <div className="p-4 border rounded-md shadow-sm">
+                  <p className="text-sm text-gray-500">Predicted Leftover</p>
+                  <p
+                    className={`text-2xl font-semibold ${
+                      predictedLeftover >= 0 ? "text-green-600" : "text-red-600"
+                    }`}
+                  >
+                    €{predictedLeftover.toFixed(2)}
+                  </p>
+                </div>
+                {/* Actual Leftover */}
+                <div className="p-4 border rounded-md shadow-sm">
+                  <p className="text-sm text-gray-500">Actual Leftover</p>
+                  <p
+                    className={`text-2xl font-semibold ${
+                      actualLeftover >= 0 ? "text-green-600" : "text-red-600"
+                    } animate-pulse`}
+                  >
+                    €{actualLeftover.toFixed(2)}
+                  </p>
+                  {actualLeftover >= 0 ? (
+                    <p className="text-xs flex items-center justify-center text-gray-600">
+                      <CheckCircle className="w-4 h-4 mr-1 text-green-500" />
+                      Positive
+                    </p>
+                  ) : (
+                    <p className="text-xs flex items-center justify-center text-gray-600">
+                      <AlertTriangle className="w-4 h-4 mr-1 text-red-500" />
+                      Negative
+                    </p>
                   )}
                 </div>
-              ))}
-              <Button
-                onClick={addFixedLine}
-                variant="secondary"
-                className="w-full bg-purple-600 hover:bg-purple-700 flex items-center justify-center"
-              >
-                + Add Fixed
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Tab Content: Variable */}
-        <TabsContent
-          value="variable"
-          className="p-4 bg-gray-700 text-white rounded-b-lg"
-        >
-          <Card className="bg-gray-700 text-white shadow-none">
-            <CardHeader>
-              <CardTitle className="text-xl">Variable Predictions</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {variablePredictions.map((item, index) => (
-                <div
-                  key={index}
-                  className="flex flex-col sm:flex-row items-start sm:items-center gap-3"
-                >
-                  <Input
-                    placeholder="e.g. Groceries"
-                    value={item.name}
-                    onChange={(e) => updateVariableLine(index, "name", e.target.value)}
-                    className="bg-gray-600 text-white"
-                  />
-                  <Input
-                    type="number"
-                    inputMode="numeric"
-                    placeholder="Amount"
-                    value={item.amount}
-                    onChange={(e) => updateVariableLine(index, "amount", e.target.value)}
-                    className="bg-gray-600 text-white w-full sm:w-32"
-                  />
-                  {index > 0 && (
-                    <Button
-                      variant="destructive"
-                      onClick={() => removeVariableLine(index)}
-                      className="mt-2 sm:mt-0"
-                    >
-                      Remove
-                    </Button>
-                  )}
+                {/* Daily Leftover */}
+                <div className="p-4 border rounded-md shadow-sm">
+                  <p className="text-sm text-gray-500">Daily Leftover</p>
+                  <p
+                    className={`text-2xl font-semibold ${
+                      parseFloat(dailyLeftover) >= 0
+                        ? "text-green-600"
+                        : "text-red-600"
+                    }`}
+                  >
+                    {dailyLeftover === "—" ? "—" : `€${dailyLeftover}/day`}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    (Based on days until Pay Day)
+                  </p>
                 </div>
-              ))}
-              <Button
-                onClick={addVariableLine}
-                variant="secondary"
-                className="w-full bg-purple-600 hover:bg-purple-700 flex items-center justify-center"
-              >
-                + Add Variable
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
+              </div>
 
-        {/* Tab Content: Charts */}
-        <TabsContent
-          value="charts"
-          className="p-4 bg-gray-700 text-white rounded-b-lg"
-        >
-          <Card className="bg-gray-700 text-white shadow-none">
-            <CardHeader>
-              <CardTitle className="text-xl">Variable Expenses Chart</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {barData.length > 0 ? (
-                <div className="w-full h-64">
-                  <ResponsiveContainer>
-                    <BarChart data={barData}>
-                      <XAxis
-                        dataKey="name"
-                        angle={-45}
-                        textAnchor="end"
-                        height={60}
-                        stroke="#ffffff"
-                      />
-                      <YAxis stroke="#ffffff" />
-                      <Tooltip formatter={(value) => `€${value}`} />
-                      <Bar dataKey="amount" fill="#4ade80" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <p className="text-center text-gray-400">
-                  No variable expenses to display.
+              {/* Threshold Info */}
+              <div>
+                {isBelowThreshold ? (
+                  <p className="text-red-600 flex items-center text-sm">
+                    <AlertTriangle className="w-4 h-4 mr-1" />
+                    Warning: Below threshold (€{threshold.toFixed(2)})!
+                  </p>
+                ) : (
+                  <p className="text-green-600 flex items-center text-sm">
+                    <CheckCircle className="w-4 h-4 mr-1" />
+                    Above threshold (€{threshold.toFixed(2)}) — safe.
+                  </p>
+                )}
+              </div>
+
+              {/* Income Distribution Progress Bars */}
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-gray-600">
+                  Income Distribution
                 </p>
-              )}
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="whitespace-nowrap">
+                    Fixed ({fixedPercent.toFixed(1)}%)
+                  </span>
+                  <Progress value={fixedPercent} className="flex-1" />
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="whitespace-nowrap">
+                    Variable ({variablePercent.toFixed(1)}%)
+                  </span>
+                  <Progress value={variablePercent} className="flex-1" />
+                </div>
+              </div>
+
+              {/* Recharts for Variable Predicted vs. Spent */}
+              <div className="p-4 border rounded-md shadow-sm">
+                <h3 className="text-sm text-gray-500 mb-3 font-semibold">
+                  Variable: Predicted vs. Spent
+                </h3>
+                {/* Legend */}
+                <div className="flex items-center justify-center gap-6 mb-2 text-xs">
+                  <div className="flex items-center gap-1">
+                    <span
+                      className="inline-block w-3 h-3 rounded-full"
+                      style={{ backgroundColor: "#60a5fa" }}
+                    />
+                    <span className="text-gray-600">Predicted</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span
+                      className="inline-block w-3 h-3 rounded-full"
+                      style={{ backgroundColor: "#f87171" }}
+                    />
+                    <span className="text-gray-600">Spent</span>
+                  </div>
+                </div>
+                {barData.length > 0 ? (
+                  <div className="w-full h-64">
+                    <ResponsiveContainer>
+                      <BarChart data={barData}>
+                        <XAxis
+                          dataKey="name"
+                          angle={-45}
+                          textAnchor="end"
+                          height={60}
+                          stroke="#4B5563" // gray-700
+                        />
+                        <YAxis stroke="#4B5563" />
+                        <Tooltip
+                          formatter={(value) => `€${value}`}
+                          labelStyle={{ color: "#374151" }}
+                          itemStyle={{ color: "#374151" }}
+                          contentStyle={{ backgroundColor: "#fafafa" }}
+                        />
+                        <Bar dataKey="predicted" fill="#60a5fa" name="Predicted" />
+                        <Bar dataKey="spent" fill="#f87171" name="Spent" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <p className="text-center text-gray-400">No data to display.</p>
+                )}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
