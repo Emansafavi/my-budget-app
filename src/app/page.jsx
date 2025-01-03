@@ -1,24 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from "@/components/ui/card";
+import React, { useState, useEffect, useRef } from "react";
+import {  Card,  CardHeader,  CardTitle,  CardContent,} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import {
-  Upload,
-  FileDown,
-  CheckCircle,
-  AlertTriangle,
-  Plus,
-} from "lucide-react";
-
+import {Upload, FileDown, CheckCircle,
+   AlertTriangle, Plus, Calendar,} from "lucide-react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 
@@ -48,10 +37,13 @@ export default function Page() {
   // -----------------------------
   // States
   // -----------------------------
-  const [incomes, setIncomes] = useState([{ name: "", amount: 0 }]);
-  const [fixedExpenses, setFixedExpenses] = useState([{ name: "", amount: 0 }]);
+  const [incomes, setIncomes] = useState([{ name: "Salary", amount: 1000 }]);
+  const [fixedExpenses, setFixedExpenses] = useState([{ name: "rent", amount: 600 }]);
   const [variableExpenses, setVariableExpenses] = useState([
-    { name: "Groceries", predicted: 100, spent: 0 },
+    { name: "Groceries", predicted: 120, spent: 0 },
+    { name: "Socializing/Bar/dinning out", predicted: 52, spent: 0 },
+    { name: "Cafeteria", predicted: 64, spent: 0 },
+
   ]);
 
   // Basic setup
@@ -60,7 +52,18 @@ export default function Page() {
 
   // Dates
   const [todayDate, setTodayDate] = useState(new Date());
-  const [payDay, setPayDay] = useState(new Date()); // user-chosen pay day
+  const [payDay, setPayDay] = useState(new Date(todayDate.getFullYear(), todayDate.getMonth(), 30));
+
+  // Calculate days until payday
+  const daysUntilPayday = Math.ceil((payDay - todayDate) / (1000 * 60 * 60 * 24));
+
+  // Handle payday change
+  const handlePayDayChange = (date) => {
+    setPayDay(date);
+  };
+
+  // Ref for DatePicker input
+  const datePickerRef = useRef(null);
 
   // -----------------------------
   // Budget Logic
@@ -83,18 +86,20 @@ export default function Page() {
   const actualLeftover =
     leftoverLastMonth + totalIncome - totalFixed - totalSpent;
 
-  // Days until pay day (if user sets payDay >= today; else just treat it as 0)
+  // Days until pay day
   const msInDay = 1000 * 60 * 60 * 24;
   const daysUntilPayDay = Math.max(
     Math.ceil((payDay.getTime() - todayDate.getTime()) / msInDay),
     0
   );
 
-  // Daily leftover (based on actual leftover)
+  // Daily leftover
+  // CHANGED: If actualLeftover < 0 or daysUntilPayDay is 0 => “0/day”
   const dailyLeftover =
-    daysUntilPayDay > 0 ? (actualLeftover / daysUntilPayDay).toFixed(2) : "—";
+    daysUntilPayDay > 0 && actualLeftover > 0
+      ? (actualLeftover / daysUntilPayDay).toFixed(2)
+      : "0.00";
 
-  // Check threshold
   const isBelowThreshold = actualLeftover < threshold;
 
   // Distribution (for a progress bar in the Dashboard)
@@ -116,7 +121,6 @@ export default function Page() {
   // CSV Import/Export Handlers
   // -----------------------------
   const handleExportCsv = () => {
-    // Example CSV structure
     const rows = [
       ["Section", "Name", "Amount"],
       ...incomes.map((i) => ["Income", i.name, i.amount]),
@@ -163,7 +167,7 @@ export default function Page() {
           const amount = parseFloat(amountStr) || 0;
           newFixed.push({ name, amount });
         }
-        // else if (section === "Variable") { parse out predicted/spent if wanted }
+        // else if (section === "Variable") { parse out predicted/spent if needed }
       });
 
       setIncomes(newIncomes);
@@ -231,7 +235,7 @@ export default function Page() {
     setVariableExpenses(arr);
   };
 
-  // **New**: Quick “Add Spent” function
+  // Quick “Add Spent”
   const handleAddSpent = (idx, addValue) => {
     const arr = [...variableExpenses];
     arr[idx].spent += parseFloat(addValue) || 0;
@@ -239,121 +243,61 @@ export default function Page() {
   };
 
   // -----------------------------
-  // UI / Layout
+  // Onboarding Check
   // -----------------------------
+  // NEW: If the user has basically no data, show a prompt on the Dashboard
+  const showOnboardingPrompt =
+    incomes.every((i) => i.amount === 0) &&
+    fixedExpenses.every((f) => f.amount === 0);
+    useEffect(() => {
+      const variableTab = document.querySelector('[data-value="variable"]');
+      if (variableTab) {
+        variableTab.click();
+      }
+    }, []);
+
+  // ------------------------------------------------------------------------------------------
+  // UI / Layout
+  // ------------------------------------------------------------------------------------------
   return (
     <main className="flex flex-col items-center justify-start min-h-screen bg-white py-6 px-4 space-y-6">
-      <h1 className="text-3xl md:text-4xl font-extrabold text-gray-900">
-        My Budget App
-      </h1>
-
-      {/* Budget Setup */}
-      <Card className="w-full max-w-3xl shadow-md rounded-xl">
-        <CardHeader>
-          <CardTitle className="text-lg font-semibold text-gray-900">
-            Budget Setup
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Leftover + Threshold */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Leftover (Last Month)
-              </label>
-              <Input
-                type="number"
-                value={leftoverLastMonth}
-                onChange={(e) =>
-                  setLeftoverLastMonth(parseFloat(e.target.value) || 0)
-                }
-                className="shadow-inner"
-                placeholder="€0.00"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Safety Threshold
-              </label>
-              <Input
-                type="number"
-                value={threshold}
-                onChange={(e) => setThreshold(parseFloat(e.target.value) || 0)}
-                className="shadow-inner"
-                placeholder="€0.00"
-              />
-            </div>
-          </div>
-
-          {/* Dates */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Today’s Date
-              </label>
-              <DatePicker
-                selected={todayDate}
-                onChange={(date) => setTodayDate(date)}
-                className="w-full p-2 shadow-inner rounded-md"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Pay Day
-              </label>
-              <DatePicker
-                selected={payDay}
-                onChange={(date) => setPayDay(date)}
-                className="w-full p-2 shadow-inner rounded-md"
-              />
-            </div>
-          </div>
-
-          {/* CSV Import/Export */}
-          <div className="flex flex-col md:flex-row gap-3">
-            <div className="flex-1">
-              <p className="text-sm text-gray-500 mb-1">Import CSV:</p>
-              <Button
-                variant="secondary"
-                onClick={() => document.getElementById("import-csv").click()}
-                className="flex items-center justify-center w-full bg-gray-100 hover:bg-gray-200 text-gray-700"
-              >
-                <Upload className="w-4 h-4 mr-2" />
-                Import CSV
-              </Button>
-              <input
-                type="file"
-                accept=".csv"
-                id="import-csv"
-                className="hidden"
-                onChange={handleImportCsv}
-              />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm text-gray-500 mb-1">Export CSV:</p>
-              <Button
-                onClick={handleExportCsv}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center"
-              >
-                <FileDown className="w-4 h-4 mr-2" />
-                Export CSV
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Tabs:
-          1) Variable
-          2) Fixed
-          3) Incomes
-          4) Dashboard
-       */}
+      <div className="flex justify-between w-full max-w-6xl">
+        <h1 className="text-3xl md:text-4xl font-extrabold text-gray-900">
+          My Budget App
+        </h1>
+        <div className="relative">
+          <Button
+            variant="secondary"
+            className="flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-700"
+            onClick={() => datePickerRef.current.setOpen(true)}
+          >
+            <Calendar className="w-4 h-4 mr-2" />
+            {daysUntilPayday} days until payday
+          </Button>
+          <DatePicker
+            selected={payDay}
+            onChange={handlePayDayChange}
+            dateFormat="dd/MM/yyyy"
+            showMonthDropdown
+            showYearDropdown
+            dropdownMode="select"
+            ref={datePickerRef}
+            customInput={<input  className="hidden" />}
+            dayClassName={(date) => (date.getDate() === 30 ? "highlight" : undefined)}
+          />
+        </div>
+      </div>
+      {/* Tabs // CHANGED: Put the 'dashboard' first so user sees overview first.*/}
       <Tabs
-        defaultValue="variable"
-        className="w-full max-w-6xl shadow-md rounded-xl"
-      >
+        defaultValue="dashboard"
+        className="w-full max-w-6xl shadow-md rounded-xl">
         <TabsList className="flex justify-around border-b border-gray-200 bg-white rounded-t-xl">
+          <TabsTrigger value="dashboard" className="text-gray-700">
+            Dashboard
+          </TabsTrigger>
+          <TabsTrigger value="budget-setup" className="text-gray-700">
+            Budget Setup
+          </TabsTrigger>
           <TabsTrigger value="variable" className="text-gray-700">
             Variable
           </TabsTrigger>
@@ -363,10 +307,187 @@ export default function Page() {
           <TabsTrigger value="incomes" className="text-gray-700">
             Incomes
           </TabsTrigger>
-          <TabsTrigger value="dashboard" className="text-gray-700">
-            Dashboard
-          </TabsTrigger>
         </TabsList>
+
+        {/* ================ */}
+        {/*  Dashboard/Chart */}
+        {/* ================ */}
+        <TabsContent
+          value="dashboard"
+          className="p-4 bg-white text-gray-800 rounded-b-xl">
+          <Card className="shadow-none bg-white">
+            <CardHeader>
+              <CardTitle className="text-lg font-semibold text-gray-800">
+                Dashboard
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Onboarding Prompt */}
+              {showOnboardingPrompt && (
+                <div className="p-4 bg-yellow-100 text-yellow-800 rounded-md">
+                  <p className="font-semibold">
+                    Welcome! Let’s add some Incomes & Fixed Expenses first!
+                  </p>
+                  <p className="text-sm">
+                    Go to the Incomes/Fixed tabs to fill them out.
+                  </p>
+                </div>
+              )}
+
+              {/* Leftover Summaries */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                {/* Predicted Leftover */}
+                <div className="p-4 border rounded-md shadow-sm">
+                  <p className="text-sm text-gray-500">Predicted Leftover</p>
+                  <p
+                    className={`text-2xl font-semibold ${
+                      predictedLeftover >= 0 ? "text-green-600" : "text-red-600"
+                    }`}
+                  >
+                    €{predictedLeftover.toFixed(2)}
+                  </p>
+                </div>
+                {/* Actual Leftover */}
+                <div className="p-4 border rounded-md shadow-sm">
+                  <p className="text-sm text-gray-500">Actual Leftover</p>
+                  <p
+                    className={`text-2xl font-semibold ${
+                      actualLeftover >= 0 ? "text-green-600" : "text-red-600"
+                    } animate-pulse`}
+                  >
+                    €{actualLeftover.toFixed(2)}
+                  </p>
+                  {actualLeftover >= 0 ? (
+                    <p className="text-xs flex items-center justify-center text-gray-600">
+                      <CheckCircle className="w-4 h-4 mr-1 text-green-500" />
+                      Positive
+                    </p>
+                  ) : (
+                    <p className="text-xs flex items-center justify-center text-gray-600">
+                      <AlertTriangle className="w-4 h-4 mr-1 text-red-500" />
+                      Negative
+                    </p>
+                  )}
+                </div>
+                {/* Daily Leftover */}
+                <div className="p-4 border rounded-md shadow-sm">
+                  <p className="text-sm text-gray-500">Daily Leftover</p>
+                  <p
+                    className={`text-2xl font-semibold ${
+                      parseFloat(dailyLeftover) >= 0
+                        ? "text-green-600"
+                        : "text-red-600"
+                    }`}
+                  >
+                    {daysUntilPayDay === 0
+                      ? "Payday is today!"
+                      : `€${dailyLeftover}/day`}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    (Based on days until Pay Day)
+                  </p>
+                </div>
+              </div>
+
+              {/* Threshold Info */}
+              <div>
+                {isBelowThreshold ? (
+                  <p className="text-red-600 flex items-center text-sm">
+                    <AlertTriangle className="w-4 h-4 mr-1" />
+                    Warning: Below threshold (€{threshold.toFixed(2)})!
+                  </p>
+                ) : (
+                  <p className="text-green-600 flex items-center text-sm">
+                    <CheckCircle className="w-4 h-4 mr-1" />
+                    Above threshold (€{threshold.toFixed(2)}) — safe.
+                  </p>
+                )}
+              </div>
+
+              {/* Income Distribution Progress Bars */}
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-gray-600">
+                  Income Distribution
+                </p>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="whitespace-nowrap">
+                    Fixed ({fixedPercent.toFixed(1)}%)
+                  </span>
+                  <Progress value={fixedPercent} className="flex-1" />
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="whitespace-nowrap">
+                    Variable ({variablePercent.toFixed(1)}%)
+                  </span>
+                  <Progress value={variablePercent} className="flex-1" />
+                </div>
+              </div>
+
+              {/* Recharts for Variable Predicted vs. Spent */}
+              <div className="p-4 border rounded-md shadow-sm">
+                <h3 className="text-sm text-gray-500 mb-3 font-semibold">
+                  Variable: Predicted vs. Spent
+                </h3>
+                {/* Legend */}
+                <div className="flex items-center justify-center gap-6 mb-2 text-xs">
+                  <div className="flex items-center gap-1">
+                    <span
+                      className="inline-block w-3 h-3 rounded-full"
+                      style={{ backgroundColor: "#60a5fa" }}
+                    />
+                    <span className="text-gray-600">Predicted</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span
+                      className="inline-block w-3 h-3 rounded-full"
+                      style={{ backgroundColor: "#f87171" }}
+                    />
+                    <span className="text-gray-600">Spent</span>
+                  </div>
+                </div>
+                {barData.length > 0 ? (
+                  <div className="w-full h-64">
+                    <ResponsiveContainer>
+                      <BarChart data={barData}>
+                        <XAxis
+                          dataKey="name"
+                          angle={-45}
+                          textAnchor="end"
+                          height={60}
+                          stroke="#4B5563"
+                        />
+                        <YAxis stroke="#4B5563" />
+                        <Tooltip
+                          formatter={(value) => `€${value}`}
+                          labelStyle={{ color: "#374151" }}
+                          itemStyle={{ color: "#374151" }}
+                          contentStyle={{ backgroundColor: "#fafafa" }}
+                        />
+                        <Bar dataKey="predicted" fill="#60a5fa" name="Predicted" />
+                        <Bar dataKey="spent" fill="#f87171" name="Spent" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <p className="text-center text-gray-400">No data to display.</p>
+                )}
+              </div>
+
+              {/* NEW: Quick Button to add variable expense directly */}
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  // Programmatically switch to "variable" tab
+                  document.querySelector('[data-value="variable"]').click();
+                }}
+                className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 mt-4 flex items-center justify-center"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Quick Add Expense
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* =================== */}
         {/*  Variable Expenses */}
@@ -392,7 +513,7 @@ export default function Page() {
                       placeholder="e.g. Groceries"
                       value={item.name}
                       onChange={(e) => updateVariableName(idx, e.target.value)}
-                      className="shadow-inner"
+                      className="shadow-inner w-full sm:w-32"
                     />
                     <div className="flex gap-2">
                       <Input
@@ -424,7 +545,6 @@ export default function Page() {
                       type="number"
                       placeholder="+€"
                       onKeyDown={(e) => {
-                        // Pressing Enter => confirm
                         if (e.key === "Enter") {
                           handleAddSpent(idx, e.currentTarget.value);
                           e.currentTarget.value = "";
@@ -434,11 +554,7 @@ export default function Page() {
                     />
                     <Button
                       onClick={() => {
-                        const inputElem = document.getElementById(
-                          `addSpentInput-${idx}`
-                        );
-                        // If you store refs or IDs, we could read the value directly
-                        // For simplicity, let's do the "onKeyDown" approach above
+                        // Could do a ref or ID approach if desired
                       }}
                       className="flex items-center gap-1 bg-green-100 text-green-700 hover:bg-green-200"
                       title="Add spent amount"
@@ -553,7 +669,9 @@ export default function Page() {
                   <Input
                     placeholder="Name"
                     value={item.name}
-                    onChange={(e) => updateIncomeLine(idx, "name", e.target.value)}
+                    onChange={(e) =>
+                      updateIncomeLine(idx, "name", e.target.value)
+                    }
                     className="shadow-inner"
                   />
                   <Input
@@ -587,159 +705,91 @@ export default function Page() {
             </CardContent>
           </Card>
         </TabsContent>
-
-        {/* ================ */}
-        {/*  Dashboard/Chart */}
-        {/* ================ */}
-        <TabsContent
-          value="dashboard"
-          className="p-4 bg-white text-gray-800 rounded-b-xl"
-        >
-          <Card className="shadow-none bg-white">
-            <CardHeader>
-              <CardTitle className="text-lg font-semibold text-gray-800">
-                Dashboard
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Leftover Summaries */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-                {/* Predicted Leftover */}
-                <div className="p-4 border rounded-md shadow-sm">
-                  <p className="text-sm text-gray-500">Predicted Leftover</p>
-                  <p
-                    className={`text-2xl font-semibold ${
-                      predictedLeftover >= 0 ? "text-green-600" : "text-red-600"
-                    }`}
-                  >
-                    €{predictedLeftover.toFixed(2)}
-                  </p>
-                </div>
-                {/* Actual Leftover */}
-                <div className="p-4 border rounded-md shadow-sm">
-                  <p className="text-sm text-gray-500">Actual Leftover</p>
-                  <p
-                    className={`text-2xl font-semibold ${
-                      actualLeftover >= 0 ? "text-green-600" : "text-red-600"
-                    } animate-pulse`}
-                  >
-                    €{actualLeftover.toFixed(2)}
-                  </p>
-                  {actualLeftover >= 0 ? (
-                    <p className="text-xs flex items-center justify-center text-gray-600">
-                      <CheckCircle className="w-4 h-4 mr-1 text-green-500" />
-                      Positive
-                    </p>
-                  ) : (
-                    <p className="text-xs flex items-center justify-center text-gray-600">
-                      <AlertTriangle className="w-4 h-4 mr-1 text-red-500" />
-                      Negative
-                    </p>
-                  )}
-                </div>
-                {/* Daily Leftover */}
-                <div className="p-4 border rounded-md shadow-sm">
-                  <p className="text-sm text-gray-500">Daily Leftover</p>
-                  <p
-                    className={`text-2xl font-semibold ${
-                      parseFloat(dailyLeftover) >= 0
-                        ? "text-green-600"
-                        : "text-red-600"
-                    }`}
-                  >
-                    {dailyLeftover === "—" ? "—" : `€${dailyLeftover}/day`}
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    (Based on days until Pay Day)
-                  </p>
-                </div>
-              </div>
-
-              {/* Threshold Info */}
-              <div>
-                {isBelowThreshold ? (
-                  <p className="text-red-600 flex items-center text-sm">
-                    <AlertTriangle className="w-4 h-4 mr-1" />
-                    Warning: Below threshold (€{threshold.toFixed(2)})!
-                  </p>
-                ) : (
-                  <p className="text-green-600 flex items-center text-sm">
-                    <CheckCircle className="w-4 h-4 mr-1" />
-                    Above threshold (€{threshold.toFixed(2)}) — safe.
-                  </p>
-                )}
-              </div>
-
-              {/* Income Distribution Progress Bars */}
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-gray-600">
-                  Income Distribution
-                </p>
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="whitespace-nowrap">
-                    Fixed ({fixedPercent.toFixed(1)}%)
-                  </span>
-                  <Progress value={fixedPercent} className="flex-1" />
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="whitespace-nowrap">
-                    Variable ({variablePercent.toFixed(1)}%)
-                  </span>
-                  <Progress value={variablePercent} className="flex-1" />
-                </div>
-              </div>
-
-              {/* Recharts for Variable Predicted vs. Spent */}
-              <div className="p-4 border rounded-md shadow-sm">
-                <h3 className="text-sm text-gray-500 mb-3 font-semibold">
-                  Variable: Predicted vs. Spent
-                </h3>
-                {/* Legend */}
-                <div className="flex items-center justify-center gap-6 mb-2 text-xs">
-                  <div className="flex items-center gap-1">
-                    <span
-                      className="inline-block w-3 h-3 rounded-full"
-                      style={{ backgroundColor: "#60a5fa" }}
-                    />
-                    <span className="text-gray-600">Predicted</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span
-                      className="inline-block w-3 h-3 rounded-full"
-                      style={{ backgroundColor: "#f87171" }}
-                    />
-                    <span className="text-gray-600">Spent</span>
-                  </div>
-                </div>
-                {barData.length > 0 ? (
-                  <div className="w-full h-64">
-                    <ResponsiveContainer>
-                      <BarChart data={barData}>
-                        <XAxis
-                          dataKey="name"
-                          angle={-45}
-                          textAnchor="end"
-                          height={60}
-                          stroke="#4B5563" // gray-700
-                        />
-                        <YAxis stroke="#4B5563" />
-                        <Tooltip
-                          formatter={(value) => `€${value}`}
-                          labelStyle={{ color: "#374151" }}
-                          itemStyle={{ color: "#374151" }}
-                          contentStyle={{ backgroundColor: "#fafafa" }}
-                        />
-                        <Bar dataKey="predicted" fill="#60a5fa" name="Predicted" />
-                        <Bar dataKey="spent" fill="#f87171" name="Spent" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                ) : (
-                  <p className="text-center text-gray-400">No data to display.</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+      {/* =========== */}
+        {/*  Budget Setup */}
+        {/* =========== */}
+        <TabsContent value="budget-setup" className="p-4 bg-white text-gray-800 rounded-b-xl">
+            <div className="flex flex-col h-full w-full">
+               <Card className="shadow-none bg-white flex-grow">
+                        <CardHeader>
+                          <CardTitle className="text-lg font-semibold text-gray-800">
+                            Budget Setup
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          {/* Budget Setup */}
+                          <Card className="w-full max-w-3xl shadow-md rounded-xl">
+                            <CardHeader>
+                              <CardTitle className="text-lg font-semibold text-gray-900">
+                                Budget Setup
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                              {/* Leftover + Threshold */}
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Leftover (Last Month)
+                                  </label>
+                                  <Input
+                                    type="number"
+                                    value={leftoverLastMonth}
+                                    onChange={(e) =>
+                                      setLeftoverLastMonth(parseFloat(e.target.value) || 0)
+                                    }
+                                    className="shadow-inner"
+                                    placeholder="€0.00"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Safety Threshold
+                                  </label>
+                                  <Input
+                                    type="number"
+                                    value={threshold}
+                                    onChange={(e) => setThreshold(parseFloat(e.target.value) || 0)}
+                                    className="shadow-inner"
+                                    placeholder="€0.00"
+                                  />
+                                </div>
+                              </div>                 
+                              {/* CSV Import/Export */}
+                              <div className="flex flex-col md:flex-row gap-3">
+                                <div className="flex-1">
+                                  <p className="text-sm text-gray-500 mb-1">Import CSV:</p>
+                                  <Button
+                                    variant="secondary"
+                                    onClick={() => document.getElementById("import-csv").click()}
+                                    className="flex items-center justify-center w-full bg-gray-100 hover:bg-gray-200 text-gray-700"
+                                  >
+                                    <Upload className="w-4 h-4 mr-2" />
+                                    Import CSV
+                                  </Button>
+                                  <input
+                                    type="file"
+                                    accept=".csv"
+                                    id="import-csv"
+                                    className="hidden"
+                                    onChange={handleImportCsv}
+                                  />
+                                </div>
+                                <div className="flex-1">
+                                  <p className="text-sm text-gray-500 mb-1">Export CSV:</p>
+                                  <Button
+                                    onClick={handleExportCsv}
+                                    className="w-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center"
+                                  >
+                                    <FileDown className="w-4 h-4 mr-2" />
+                                    Export CSV
+                                  </Button>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </CardContent>
+                      </Card>
+            </div>
         </TabsContent>
       </Tabs>
     </main>
